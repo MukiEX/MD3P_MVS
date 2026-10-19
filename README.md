@@ -1,6 +1,6 @@
-# Neo Geo Paddle Editions
+# MD3P_MVS: Neo Geo Paddle Editions
 
-Taito F3-style "Sensor" spinner support for three Neo Geo puzzle games, as
+Taito F3-style "Sensor" spinner support for three Neo Geo (MVS/AES) puzzle games, as
 patches to the original `.neo` files.
 
 | Game | Set | NGH | Output |
