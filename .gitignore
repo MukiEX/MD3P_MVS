@@ -1,0 +1,14 @@
+# ROMs and anything built from them stay out of git
+roms/
+build/
+*.neo
+*.bin
+*.zip
+*.ips
+*.s28
+*.srec
+*.lst
+# harness save states and scratch
+*.pkl
+__pycache__/
+test/**/sys/

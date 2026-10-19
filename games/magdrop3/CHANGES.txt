@@ -1,0 +1,189 @@
+MAGICAL DROP III PADDLE EDITION — WHAT WAS CHANGED
+===================================================
+Game:    Magical Drop III (Neo Geo, NGH 233), magdrop3.neo
+Output:  magdrop3_paddle.neo, plus an IPS against the original .neo
+Source:  md3_paddle.asm (vasm, Motorola syntax), applied by build.py
+Name:    the .neo header name is "Magical Drop III Paddle Edition"
+         (this is what MiSTer shows in its menu).
+
+This file lists only the final behaviour. Ideas that were tried and
+dropped are left out.
+
+
+1. THE CONTROLLER: TAITO F3 "SENSOR" SPINNER
+--------------------------------------------
+- Wiring: the spinner uses each player's joystick LEFT and RIGHT lines
+  as a quadrature encoder, the same as the Taito F3 JP3 "sensor" input
+  and the F3 MiSTer rf_spinner.sv:
+      LEFT  = phase A
+      RIGHT = phase B
+      A leading B (00 -> 10 -> 11 -> 01) = +1 = clockwise = right/down
+  A sample where both phases changed at once is ignored.
+- Sampling: the Neo Geo has no hardware counter for this, so the
+  video chip's raster timer (IRQ2) samples both ports every 4 lines,
+  about 3.9 kHz. The game never used IRQ2. Vector 0x68 now points at
+  the decoder. The game's own LSPCMODE writes (0x15BC, 0x20A2, 0x25C00,
+  0x25EE2, 0x26106) are routed through a stub that keeps the timer bits
+  set.
+- Auto-detection: a port becomes a spinner the first time LEFT and
+  RIGHT read pressed together. A lever can't do that. Until then
+  nothing is changed: lever play is identical to the original, and the
+  sampling timer stays off.
+- P1 and P2 are detected and counted separately.
+
+
+2. IN-GAME: THE CLOWN IS DRIVEN BY A VIRTUAL PADDLE
+---------------------------------------------------
+Hook: 0x18BC8, the lever move logic.
+
+- Position: the knob moves an invisible paddle position across the
+  field, like Puchi Carat's paddle. Column = position / 4 counts,
+  clamped at the walls. The game's clown then walks to that column,
+  one column per tick.
+- Hysteresis: a column edge has to be passed by 1 extra count before
+  it counts, so a resting hand doesn't flicker between two columns.
+- Settle: after 8 idle ticks, the position re-centres in its column.
+  Every move from rest then takes the same turn: about half a column
+  plus the hysteresis for one column, plus 4 counts for each further
+  column.
+- MOUSE SPEED: a new option menu setting scales the counts
+  (see section 5).
+- Same-colour slowdown ("magnet"): while the paddle is over a column
+  whose bottom balloon matches the colour in the clown's hand, the knob
+  moves the paddle at half speed, so it's easy to stop there. This is
+  ON in the main build. magdrop3_paddle_nomagnet.neo is the same build
+  with it switched off (one config byte, see section 9).
+- No sound on column changes. The click is in the code but turned off
+  (cfg_click = 0).
+
+
+3. IN-GAME VISUALS
+------------------
+- Smooth glide: the clown, and the balloons in its hand, are drawn
+  where the paddle is, gliding between columns instead of jumping. The
+  aim line moves with the clown, staying the same distance from it as
+  the game would normally put it.
+  Hooks: clown X at 0x19196 (P1) and 0x19268 (P2), aim line X at
+  0x152A0.
+- Pulsing target column: the balloons in the column the paddle points
+  at pulse between darker and lighter. It's a smooth triangle wave in
+  4-frame steps, about 0.9 s per cycle, running from 50% dark through
+  normal to about 30% toward white.
+  How it works:
+    - Balloons use palettes $10-$17.
+    - Shaded copies are written to palettes $98-$9F, which the game
+      never uses.
+    - The sprite engine's tile loop (hook at 0x10FA8) swaps a balloon
+      tile's palette for its shaded copy when the tile belongs to the
+      targeted column.
+    - The copies are refreshed round-robin (two palettes per frame
+      while pulsing), so they follow the game's own fades without
+      slowing the game down.
+
+
+4. MENUS: PUCHI CARAT-STYLE STEPPING
+------------------------------------
+- Generic menus: knob motion becomes at most one step per game tick,
+  at 16 counts per step. The remainder carries over, the same as
+  Puchi Carat's list menus. Clockwise = RIGHT and DOWN; counter-
+  clockwise = LEFT and UP. The steps are written into the game's own
+  input records (held and press bits), so every menu reacts as if the
+  lever were tapped.
+  Hooks: VBlank port reads at 0x0D0E / 0x0D3A, tick release at 0x0E10.
+- A screen that hasn't read the knob for more than two ticks starts
+  fresh, so a turn on one screen never leaks into the next.
+- Character select (hook at 0x27698): the knob walks the cards in
+  reading order and wraps around, like the tarot wheel it is. The new
+  cursor goes through the game's own code, so the sound and portrait
+  update happen as normal.
+- Ranking name entry (hook at 0x9DCC): 4 counts per letter, letters
+  wrap. Same rate as Puchi Carat's name entry.
+
+
+5. NEW OPTION: MOUSE SPEED (HOME / AES OPTION MENU)
+--------------------------------------------------
+- A fifth item, MOUSE SPEED, with x0.25 / x0.5 / x1. EXIT moves down
+  one line.
+- It scales the in-game paddle. Menus and name entry stay at their
+  fixed rates.
+- It's drawn in the game's own fix-layer message format, with the same
+  blinking highlight as the other items.
+- It defaults to x1 at power-on. It isn't written to the memory card
+  or backup RAM.
+- Hooks: 0x10A24 (menu open), 0x10ABC (EXIT), 0x10A8C and 0x10AAA
+  (cursor limit raised from 4 to 5), 0x10B34 (value limits), 0x10B7C
+  (labels and highlight), 0x10BD0 (values).
+
+
+6. HIDDEN CHARACTERS UNLOCKED
+-----------------------------
+- 0x27246: the VS character select's secret check (the "C x3 on the
+  timer's number" code) is replaced with "always succeed", so the six
+  hidden cards are always shown. No code needed.
+
+
+7. WHERE THE PATCH LIVES
+------------------------
+- New code: the unused $FF area of the program ROM, from 0x4E000 (the
+  free area 0x4DB16-0x66000). The ROM size is unchanged.
+- RAM: $10F000-$10F05F, above the game's stack top and below the
+  BIOS's RAM. It holds:
+    - a 'PDL1' marker (if it's missing, the block is rebuilt);
+    - the timer bits, menu mapping, MOUSE SPEED and column-shading
+      state;
+    - a $20-byte block per player: phase, detected flag, count, and
+      separate menu, screen and in-game accumulators;
+    - the clown glide state.
+- build.py checks the original bytes at every patch site before
+  writing, so a wrong ROM is refused.
+
+
+8. FULL LIST OF PATCH SITES (ORIGINAL CODE ADDRESSES)
+-----------------------------------------------------
+  0x000068   IRQ2 vector -> spinner decoder
+  0x000D0E   VBlank P1 port read (detection, menu steps)
+  0x000D3A   VBlank P2 port read
+  0x000E10   game tick release (menu step timing)
+  0x0015BC   LSPCMODE write (keeps the timer bits)
+  0x0020A2   LSPCMODE write
+  0x025C00   LSPCMODE write
+  0x025EE2   LSPCMODE write
+  0x026106   LSPCMODE write
+  0x018BC8   in-game clown movement -> virtual paddle
+  0x027698   character select cursor
+  0x027246   hidden characters always unlocked
+  0x010A24   option menu open (MOUSE SPEED working copy)
+  0x010ABC   option menu EXIT (keep MOUSE SPEED)
+  0x010A8C   option cursor limit 4 -> 5
+  0x010AAA   "is it EXIT?" 4 -> 5
+  0x010B34   option value limits table
+  0x010B7C   option labels and highlight
+  0x010BD0   option values
+  0x010FA8   sprite engine tile loop (column shading)
+  0x019196   P1 clown X (glide)
+  0x019268   P2 clown X (glide)
+  0x0152A0   aim line X (follows the clown)
+  0x009DCC   ranking name entry
+
+
+9. TUNING BLOCK (CPU 0x4E000, starts with "PDCF")
+--------------------------------------------------
+  +4   kmenu     16   counts per menu step
+  +6   kgame      4   counts per in-game column
+  +8   invert     0   1 = reverse the knob
+  +9   map        3   menu step mapping: bit0 = L/R, bit1 = U/D
+  +10  reload  1535   timer period in pixel clocks (4 lines)
+  +12  lspcbits $D0   IRQ enable | reload at VBlank | repeat
+  +14  kname      4   counts per letter on name entry
+  +16  hyst       1   counts past a column edge before it counts
+  +18  settle     8   idle ticks before re-centring (0 = never)
+  +20  click      0   sound code per column change (0 = off)
+  +22  speed      2   MOUSE SPEED at power-on (0 x0.25, 1 x0.5, 2 x1)
+  +23  magnet     1   same-colour slowdown (1 = half speed, 0 = off)
+  +24  dark       5   column shading: 0 off, 1 dark 50%, 2 dark 75%,
+                      3 light 25%, 4 light 50%, 5 pulse
+  +25  glide      1   draw the clown where the paddle is (0 = off)
+
+  The ROM is stored byte-swapped in a .neo, so CPU address X is at file
+  offset 4096 + (X XOR 1). Example: the magnet byte (CPU 0x4E017) is at
+  file offset 0x4F016.

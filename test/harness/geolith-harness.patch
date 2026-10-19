@@ -1,0 +1,162 @@
+diff --git a/libretro/libretro.c b/libretro/libretro.c
+index eafb977..467a165 100644
+--- a/libretro/libretro.c
++++ b/libretro/libretro.c
+@@ -502,12 +502,7 @@ static unsigned geo_input_poll_js(unsigned port) {
+         }
+     }
+ 
+-    // Prevent opposing directions from being pressed simultaneously
+-    if (!(b & 0x01) && !(b & 0x02))
+-        b |= 0x03;
+-    if (!(b & 0x04) && !(b & 0x08))
+-        b |= 0x0c;
+-
++    // harness: SOCD filter removed so quadrature on L/R passes through
+     return b;
+ }
+ 
+diff --git a/libretro/link.T b/libretro/link.T
+index b0c262d..3dd08d7 100644
+--- a/libretro/link.T
++++ b/libretro/link.T
+@@ -1,5 +1,4 @@
+ {
+-   global: retro_*;
++   global: retro_*; geo_*; m68k_*;
+    local: *;
+ };
+-
+diff --git a/src/geo.c b/src/geo.c
+index 87ad745..cc6d0c4 100644
+--- a/src/geo.c
++++ b/src/geo.c
+@@ -825,3 +825,7 @@ void geo_exec(void) {
+     if (ngsys.cdmode)
+         geo_cd_frame_end();
+ }
++
++/* harness helpers */
++uint32_t geo_dbg_mcycs(void) { return mcycs; }
++void geo_dbg_sound(unsigned code) { ngsys.sound_code = code & 0xff; geo_z80_nmi(); }
+diff --git a/src/geo_lspc.c b/src/geo_lspc.c
+index 6fc647a..7e0bcda 100644
+--- a/src/geo_lspc.c
++++ b/src/geo_lspc.c
+@@ -1091,3 +1091,4 @@ const void* geo_lspc_vram_ptr(void) {
+ const void* geo_lspc_palram_ptr(void) {
+     return lspc.palram;
+ }
++uint16_t geo_dbg_vramaddr(void) { return lspc.vramaddr; }
+diff --git a/src/geo_m68k.c b/src/geo_m68k.c
+index 86d0998..a3368e8 100644
+--- a/src/geo_m68k.c
++++ b/src/geo_m68k.c
+@@ -787,6 +787,34 @@ static void geo_m68k_write_banksw_16_kof10th(uint32_t addr, uint16_t data) {
+  * ---------------------------------------------------------------------
+  */
+ 
++
++/* ---- harness debug watch ---- */
++typedef struct { uint32_t pc, addr, val; uint32_t rwsize; } dbg_rec_t;
++#define DBG_N 262144
++dbg_rec_t geo_dbg_log[DBG_N];
++uint32_t geo_dbg_count = 0;
++uint32_t geo_dbg_snd[1024]; uint32_t geo_dbg_sndn = 0;
++uint16_t geo_dbg_vramaddr(void);
++typedef struct { uint32_t pc; uint16_t addr, val; } vrec_t;
++#define VN 1048576
++vrec_t geo_dbg_vlog[VN]; uint32_t geo_dbg_vn = 0, geo_dbg_von = 0;
++vrec_t *geo_dbg_vlogptr(void) { return geo_dbg_vlog; }
++uint32_t geo_dbg_vcount(void) { return geo_dbg_vn; }
++void geo_dbg_vctl(uint32_t on) { geo_dbg_von = on; geo_dbg_vn = 0; }
++uint32_t *geo_dbg_sndptr(void) { return geo_dbg_snd; }
++uint32_t geo_dbg_sndcount(void) { uint32_t n = geo_dbg_sndn; return n; }
++void geo_dbg_sndclear(void) { geo_dbg_sndn = 0; }
++uint32_t geo_dbg_lo = 0, geo_dbg_hi = 0, geo_dbg_mode = 0; /* mode bit0 = reads, bit1 = writes */
++void geo_dbg_watch(uint32_t lo, uint32_t hi, uint32_t mode) { geo_dbg_lo = lo; geo_dbg_hi = hi; geo_dbg_mode = mode; geo_dbg_count = 0; }
++dbg_rec_t *geo_dbg_logptr(void) { return geo_dbg_log; }
++uint32_t geo_dbg_get_count(void) { return geo_dbg_count; }
++static inline void dbg_acc(uint32_t a, uint32_t v, uint32_t rw, uint32_t sz) {
++    a = 0x100000 | (a & 0xffff);
++    if (a >= geo_dbg_lo && a < geo_dbg_hi && (geo_dbg_mode & (1u << rw)) && geo_dbg_count < DBG_N) {
++        dbg_rec_t *r = &geo_dbg_log[geo_dbg_count++];
++        r->pc = m68k_get_reg(NULL, M68K_REG_PPC); r->addr = a; r->val = v; r->rwsize = (rw << 8) | sz;
++    }
++}
+ static unsigned geo_m68k_cart_read_8(unsigned address) {
+     if (address < 0x000080) { // Vector Table
+         m68k_modify_timeslice(1);
+@@ -798,7 +826,8 @@ static unsigned geo_m68k_cart_read_8(unsigned address) {
+         return geo_m68k_read_fixed_8(address);
+     }
+     else if (address < 0x200000) { // RAM - Mirrored every 64K
+-        return read08(ram, address & 0xffff);
++        uint8_t v_ = read08(ram, address & 0xffff); dbg_acc(address, v_, 0, 1);
++        return v_;
+     }
+     else if (address < 0x300000) { // Switchable 1M Program ROM Bank
+         m68k_modify_timeslice(1);
+@@ -920,7 +949,8 @@ static unsigned geo_m68k_cart_read_16(unsigned address) {
+         return geo_m68k_read_fixed_16(address);
+     }
+     else if (address < 0x200000) { // RAM - Mirrored every 64K
+-        return read16(ram, address & 0xffff);
++        uint16_t v_ = read16(ram, address & 0xffff); dbg_acc(address, v_, 0, 2);
++        return v_;
+     }
+     else if (address < 0x300000) { // Switchable 1M Program ROM Bank
+         m68k_modify_timeslice(1);
+@@ -986,6 +1016,7 @@ static void geo_m68k_cart_write_8(unsigned address, unsigned value) {
+     }
+     else if (address < 0x200000) { // RAM - Mirrored every 64K
+         m68k_modify_timeslice(1);
++        dbg_acc(address, value & 0xff, 1, 1);
+         write08(ram, address & 0xffff, value & 0xff);
+     }
+     else if (address < 0x300000) { // Switchable 1M Program ROM Bank
+@@ -1001,6 +1032,7 @@ static void geo_m68k_cart_write_8(unsigned address, unsigned value) {
+             }
+             case 0x320000: { // REG_SOUND
+                 ngsys.sound_code = value & 0xff;
++                if (geo_dbg_sndn < 1024) geo_dbg_snd[geo_dbg_sndn++] = (m68k_get_reg(NULL, M68K_REG_PPC) << 8) | (value & 0xff);
+                 geo_z80_nmi();
+                 return;
+             }
+@@ -1163,6 +1195,7 @@ static void geo_m68k_cart_write_16(unsigned address, unsigned value) {
+     }
+     else if (address < 0x200000) { // RAM - Mirrored every 64K
+         m68k_modify_timeslice(1);
++        dbg_acc(address, value & 0xffff, 1, 2);
+         write16(ram, address & 0xffff, value & 0xffff);
+     }
+     else if (address < 0x300000) { // Switchable 1M Program ROM Bank
+@@ -1173,6 +1206,7 @@ static void geo_m68k_cart_write_16(unsigned address, unsigned value) {
+         switch (address) {
+             case 0x320000: { // REG_SOUND
+                 ngsys.sound_code = (value >> 8) & 0xff; // Use the upper byte
++                if (geo_dbg_sndn < 1024) geo_dbg_snd[geo_dbg_sndn++] = (m68k_get_reg(NULL, M68K_REG_PPC) << 8) | ((value >> 8) & 0xff);
+                 geo_z80_nmi();
+                 return;
+             }
+@@ -1181,6 +1215,7 @@ static void geo_m68k_cart_write_16(unsigned address, unsigned value) {
+                 return;
+             }
+             case 0x3c0002: { // REG_VRAMRW
++                if (geo_dbg_von && geo_dbg_vn < VN) { vrec_t *r = &geo_dbg_vlog[geo_dbg_vn++]; r->pc = m68k_get_reg(NULL, M68K_REG_PPC); r->addr = geo_dbg_vramaddr(); r->val = value; }
+                 geo_lspc_vram_wr(value);
+                 return;
+             }
+diff --git a/src/m68k/m68kconf.h b/src/m68k/m68kconf.h
+index 61d8c39..383a999 100644
+--- a/src/m68k/m68kconf.h
++++ b/src/m68k/m68kconf.h
+@@ -174,7 +174,7 @@ int geo_m68k_int_ack(int level);
+  * access a word or longword at an odd address.
+  * NOTE: This is only emulated properly for 68000 mode.
+  */
+-#define M68K_EMULATE_ADDRESS_ERROR  OPT_OFF
++#define M68K_EMULATE_ADDRESS_ERROR  OPT_ON
+ 
+ 
+ /* Turn ON to enable logging of illegal instruction calls.

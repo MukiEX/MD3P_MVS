@@ -1,0 +1,267 @@
+<title>Sensor Paddle Patcher</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one narrow column, a cartridge-slot drop zone, then the three games as a rack of labels */
+:root {
+  --bg: #eef1f6;
+  --panel: #ffffff;
+  --ink: #141a26;
+  --muted: #5a6478;
+  --line: #d5dbe6;
+  --accent: #1f4fd8;      /* MVS blue */
+  --accent-ink: #ffffff;
+  --gold: #b07a00;
+  --ok: #17803d;
+  --bad: #b3261e;
+  --slot: #e3e8f1;
+  --f-display: "Chakra Petch", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f131b; --panel: #171d28; --ink: #e7ebf3; --muted: #9aa5ba; --line: #2a3344;
+    --accent: #6b93ff; --accent-ink: #0b1020; --gold: #e2b23c; --ok: #4cc27a; --bad: #ff7a70; --slot: #121722;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f131b; --panel: #171d28; --ink: #e7ebf3; --muted: #9aa5ba; --line: #2a3344;
+  --accent: #6b93ff; --accent-ink: #0b1020; --gold: #e2b23c; --ok: #4cc27a; --bad: #ff7a70; --slot: #121722;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+main { max-width: 760px; margin: 0 auto; padding-block: 40px 56px; display: grid; gap: 28px; }
+header { display: grid; gap: 8px; }
+.eyebrow { font-family: var(--f-mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--gold); }
+h1 { font-family: var(--f-display); font-weight: 700; font-size: clamp(30px, 6vw, 44px); line-height: 1.05; margin: 0; letter-spacing: .01em; text-wrap: balance; }
+.lede { margin: 0; color: var(--muted); max-width: 62ch; }
+.lede code, .note code { font-family: var(--f-mono); font-size: .92em; }
+
+.slot {
+  position: relative; border: 2px dashed var(--line); background: var(--slot); border-radius: 10px;
+  padding: 26px 20px; display: grid; gap: 10px; justify-items: center; text-align: center; cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.slot:hover, .slot:focus-within, .slot.drag { border-color: var(--accent); }
+.slot input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+.slot .big { font-family: var(--f-display); font-size: 20px; font-weight: 700; }
+.slot .small { color: var(--muted); font-size: 13px; }
+.slot .file { font-family: var(--f-mono); font-size: 13px; color: var(--ink); word-break: break-all; }
+
+.rack { display: grid; gap: 12px; }
+.rack h2 { font-family: var(--f-display); font-size: 15px; letter-spacing: .06em; text-transform: uppercase; margin: 0; color: var(--muted); font-weight: 500; }
+.game {
+  display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; align-items: start;
+  background: var(--panel); border: 1px solid var(--line); border-left: 6px solid var(--line);
+  border-radius: 6px; padding: 14px 16px;
+}
+.game.found { border-left-color: var(--accent); }
+.game .t { font-family: var(--f-display); font-weight: 700; font-size: 18px; min-width: 0; }
+.game .ngh { font-family: var(--f-mono); font-size: 12px; color: var(--muted); white-space: nowrap; }
+.game p { grid-column: 1 / -1; margin: 0; color: var(--muted); font-size: 14px; max-width: 64ch; }
+.game .state { grid-column: 1 / -1; font-family: var(--f-mono); font-size: 12px; color: var(--muted); }
+.game.found .state { color: var(--accent); }
+
+.opts { grid-column: 1 / -1; display: grid; gap: 8px; margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
+.toggle { display: flex; gap: 12px; align-items: flex-start; cursor: pointer; }
+.toggle input { margin: 3px 0 0; width: 18px; height: 18px; accent-color: var(--accent); flex: none; }
+.toggle span { min-width: 0; }
+.toggle b { font-weight: 600; color: var(--ink); }
+.toggle small { display: block; color: var(--muted); font-size: 13px; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+button.go {
+  font-family: var(--f-display); font-weight: 700; font-size: 17px; letter-spacing: .03em;
+  background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 6px; padding: 12px 22px; cursor: pointer;
+}
+button.go:disabled { opacity: .4; cursor: not-allowed; }
+button.go:focus-visible, .slot:focus-within { outline: 3px solid var(--gold); outline-offset: 2px; }
+.out { font-family: var(--f-mono); font-size: 13px; color: var(--muted); word-break: break-all; }
+
+.log { display: grid; gap: 4px; font-family: var(--f-mono); font-size: 13px; margin: 0; padding: 0; list-style: none; }
+.log li { padding-left: 18px; position: relative; overflow-wrap: anywhere; }
+.log li::before { content: "·"; position: absolute; left: 4px; color: var(--muted); }
+.log li.ok { color: var(--ok); } .log li.ok::before { content: "✓"; left: 0; }
+.log li.bad { color: var(--bad); } .log li.bad::before { content: "✕"; left: 0; }
+
+.note { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; display: grid; gap: 6px; }
+.note p { margin: 0; max-width: 70ch; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<main>
+  <header>
+    <div class="eyebrow">Neo Geo · Taito F3-style sensor spinner</div>
+    <h1>Sensor Paddle Patcher</h1>
+    <p class="lede">Turns your own <code>.neo</code> file into the Paddle Edition. A spinner wired to LEFT/RIGHT is detected the moment you turn it; until then the game plays exactly like the original. Everything happens in this page. Your ROM is never uploaded.</p>
+  </header>
+
+  <label class="slot" id="slot">
+    <input type="file" id="pick" accept=".neo">
+    <span class="big" id="slotBig">Drop a .neo file here</span>
+    <span class="small" id="slotSmall">or click to choose one. The game is recognised from its program ROM.</span>
+  </label>
+
+  <section class="rack" aria-label="Supported games">
+    <h2>Supported games</h2>
+
+    <div class="game" id="g-md3">
+      <div class="t">Magical Drop III</div><div class="ngh">NGH 233 · magdrop3</div>
+      <p>Virtual paddle (4 counts per column, edge buffer, re-centring), gliding clown and aim line, pulsing target column, Puchi Carat-style menus, character select and name entry, MOUSE SPEED in the option menu, and the hidden characters unlocked.</p>
+      <div class="opts">
+        <label class="toggle" for="magnet">
+          <input type="checkbox" id="magnet" checked>
+          <span><b>Same-colour slowdown</b><small>The paddle moves at half speed over a column whose bottom balloon matches the one in the clown's hand. Turn off for constant speed.</small></span>
+        </label>
+      </div>
+      <div class="state" id="s-md3">Waiting for a file</div>
+    </div>
+
+    <div class="game" id="g-pnb">
+      <div class="t">Pop 'n Bounce</div><div class="ngh">NGH 237 · popbounc</div>
+      <p>The spinner drives the game's own paddle mode in place of SNK's analog dial, for both play and menus. A launches the ball. Paddle mode is switched on by itself when a spinner is seen.</p>
+      <div class="state" id="s-pnb">Waiting for a file</div>
+    </div>
+
+    <div class="game" id="g-pb2">
+      <div class="t">Puzzle Bobble 2</div><div class="ngh">NGH 248 · pbobbl2n</div>
+      <p>The knob turns the launcher directly (one aim step per count), UP still re-centres, and menus, the route map and difficulty select step one item per notch. Works on both ports in versus. The program ROM grows from 1 MB to 2 MB to make room.</p>
+      <div class="state" id="s-pb2">Waiting for a file</div>
+    </div>
+  </section>
+
+  <div class="actions">
+    <button class="go" id="go" disabled>Patch and save</button>
+    <span class="out" id="outName"></span>
+  </div>
+  <ul class="log" id="log" aria-live="polite"></ul>
+
+  <div class="note">
+    <p>Expected inputs are the standard <code>.neo</code> sets: <code>magdrop3</code>, <code>popbounc</code> and <code>pbobbl2n</code>. A file with a different program ROM is refused, and every patched result is checked against the build it should match.</p>
+    <p>Inside Claude the result comes as a <code>.zip</code> holding the <code>.neo</code>, because .neo isn't a download type there. Opened as a local file in a browser, this page saves the <code>.neo</code> directly.</p>
+  </div>
+</main>
+
+<script>
+const GAMES = __DATA__;
+const NAMES = { md3: "Magical Drop III", pnb: "Pop 'n Bounce", pb2: "Puzzle Bobble 2" };
+const OUTFILE = { md3: ["magdrop3_paddle.neo", "magdrop3_paddle_nomagnet.neo"], pnb: ["popbounc_paddle.neo"], pb2: ["pbobbl2n_paddle.neo"] };
+const MAGNET_CPU = 0x4e017;
+
+const $ = (id) => document.getElementById(id);
+const log = (msg, cls) => { const li = document.createElement("li"); li.textContent = msg; if (cls) li.className = cls; $("log").appendChild(li); };
+
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(u8, start = 0, end = u8.length) { let c = 0xffffffff; for (let i = start; i < end; i++) c = CRC_T[(c ^ u8[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; }
+const hex = (n) => n.toString(16).toUpperCase().padStart(8, "0");
+const b64 = (s) => { const bin = atob(s); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; };
+
+let input = null, inName = "", game = null;
+
+function resetStates() {
+  for (const k of Object.keys(GAMES)) { $("g-" + k).classList.remove("found"); $("s-" + k).textContent = "Waiting for a file"; }
+}
+
+async function load(file) {
+  $("log").innerHTML = ""; $("outName").textContent = ""; resetStates(); game = null; $("go").disabled = true;
+  inName = file.name;
+  $("slotBig").textContent = file.name;
+  $("slotSmall").textContent = (file.size / 1048576).toFixed(2) + " MB";
+  const buf = new Uint8Array(await file.arrayBuffer());
+  if (buf.length < 4096 || buf[0] !== 0x4e || buf[1] !== 0x45 || buf[2] !== 0x4f) { log("This isn't a .neo file (no NEO header).", "bad"); return; }
+  const dv = new DataView(buf.buffer);
+  const psize = dv.getUint32(4, true);
+  if (4096 + psize > buf.length) { log("The header's program ROM size runs past the end of the file.", "bad"); return; }
+  const pcrc = crc32(buf, 4096, 4096 + psize);
+  for (const [k, g] of Object.entries(GAMES)) {
+    const outs = [g.rawout, g.rawout_nomag].filter(Boolean);
+    if (psize === g.psize && pcrc === g.rawcrc) { game = k; break; }
+    if (psize === g.newsize && outs.includes(pcrc)) { log(NAMES[k] + ": this file is already a Paddle Edition. Use the original .neo.", "bad"); $("g-" + k).classList.add("found"); $("s-" + k).textContent = "Already patched"; return; }
+  }
+  if (!game) { log("Program ROM not recognised (CRC " + hex(pcrc) + ", " + psize / 1048576 + " MB). Only magdrop3, popbounc and pbobbl2n are supported.", "bad"); return; }
+  input = buf;
+  $("g-" + game).classList.add("found");
+  $("s-" + game).textContent = "Recognised · program ROM CRC " + hex(pcrc);
+  log("Recognised " + NAMES[game] + ".", "ok");
+  $("go").disabled = false;
+  updateOutName();
+}
+
+function outFilename() { return OUTFILE[game][game === "md3" && !$("magnet").checked ? 1 : 0]; }
+function updateOutName() { if (game) $("outName").textContent = "→ " + outFilename(); }
+$("magnet").addEventListener("change", updateOutName);
+
+function patch() {
+  const g = GAMES[game];
+  const src = input;
+  const grow = g.newsize - g.psize;
+  const out = new Uint8Array(src.length + grow);
+  out.set(src.subarray(0, 4096 + g.psize), 0);
+  if (grow) out.fill(0xff, 4096 + g.psize, 4096 + g.newsize);
+  out.set(src.subarray(4096 + g.psize), 4096 + g.newsize);
+  new DataView(out.buffer).setUint32(4, g.newsize, true);
+  // P ROM is stored byte-swapped in a .neo: CPU byte a sits at 4096 + (a ^ 1)
+  for (const [a, data] of g.runs) { const d = b64(data); for (let i = 0; i < d.length; i++) out[4096 + ((a + i) ^ 1)] = d[i]; }
+  if (game === "md3" && !$("magnet").checked) out[4096 + (MAGNET_CPU ^ 1)] = 0;
+  const name = new TextEncoder().encode(g.name);
+  out.fill(0, 44, 77); out.set(name.subarray(0, 33), 44);
+  const want = game === "md3" && !$("magnet").checked ? g.rawout_nomag : g.rawout;
+  const got = crc32(out, 4096, 4096 + g.newsize);
+  return { out, ok: got === want, got, want };
+}
+
+function zipStore(filename, data) {
+  const name = new TextEncoder().encode(filename), crc = crc32(data), n = data.length;
+  const d = new Date(), time = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  const lh = new Uint8Array(30 + name.length), lv = new DataView(lh.buffer);
+  lv.setUint32(0, 0x04034b50, true); lv.setUint16(4, 20, true); lv.setUint16(10, time, true); lv.setUint16(12, date, true);
+  lv.setUint32(14, crc, true); lv.setUint32(18, n, true); lv.setUint32(22, n, true); lv.setUint16(26, name.length, true); lh.set(name, 30);
+  const ch = new Uint8Array(46 + name.length), cv = new DataView(ch.buffer);
+  cv.setUint32(0, 0x02014b50, true); cv.setUint16(4, 20, true); cv.setUint16(6, 20, true); cv.setUint16(12, time, true); cv.setUint16(14, date, true);
+  cv.setUint32(16, crc, true); cv.setUint32(20, n, true); cv.setUint32(24, n, true); cv.setUint16(28, name.length, true); ch.set(name, 46);
+  const end = new Uint8Array(22), ev = new DataView(end.buffer);
+  ev.setUint32(0, 0x06054b50, true); ev.setUint16(8, 1, true); ev.setUint16(10, 1, true); ev.setUint32(12, ch.length, true); ev.setUint32(16, lh.length + n, true);
+  return new Blob([lh, data, ch, end], { type: "application/zip" });
+}
+
+let downloads = null;
+if (window.claude && typeof window.claude.use === "function") {
+  window.claude.use("downloads").then((d) => { downloads = d; }).catch(() => {});
+}
+
+$("go").addEventListener("click", async () => {
+  if (!game) return;
+  const { out, ok, got, want } = patch();
+  if (!ok) { log("Patched program ROM CRC " + hex(got) + " doesn't match the expected " + hex(want) + ". Nothing was saved.", "bad"); return; }
+  log("Patched and verified (program ROM CRC " + hex(got) + ").", "ok");
+  const fname = outFilename();
+  if (downloads) {
+    try {
+      await downloads.save({ filename: fname.replace(/\.neo$/, ".zip"), data: zipStore(fname, out) });
+      log("Saved " + fname.replace(/\.neo$/, ".zip") + " (contains " + fname + ").", "ok");
+    } catch (e) {
+      if (e && e.code === "declined") log("Save cancelled.");
+      else log("Couldn't save here (" + ((e && e.code) || "error") + "). Download this page and open it from your computer instead.", "bad");
+    }
+    return;
+  }
+  if (window.claude) { log("Saving isn't available in this view. Download this page and open it from your computer instead.", "bad"); return; }
+  const url = URL.createObjectURL(new Blob([out], { type: "application/octet-stream" }));
+  const a = document.createElement("a"); a.href = url; a.download = fname; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+  log("Saved " + fname + ".", "ok");
+});
+
+$("pick").addEventListener("change", (e) => { const f = e.target.files[0]; if (f) load(f); e.target.value = ""; });
+const slot = $("slot");
+["dragenter", "dragover"].forEach((t) => slot.addEventListener(t, (e) => { e.preventDefault(); slot.classList.add("drag"); }));
+["dragleave", "drop"].forEach((t) => slot.addEventListener(t, (e) => { e.preventDefault(); slot.classList.remove("drag"); }));
+slot.addEventListener("drop", (e) => { const f = e.dataTransfer.files[0]; if (f) load(f); });
+</script>
