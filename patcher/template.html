@@ -33,6 +33,7 @@
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
   background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.55;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
@@ -93,6 +94,34 @@ button.go:focus-visible, .slot:focus-within { outline: 3px solid var(--gold); ou
 
 .note { font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; display: grid; gap: 6px; }
 .note p { margin: 0; max-width: 70ch; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.tab {
+  font-family: var(--f-display); font-weight: 700; font-size: 16px; letter-spacing: .03em;
+  background: none; border: 0; border-bottom: 3px solid transparent; color: var(--muted);
+  padding: 8px 14px 9px; margin-bottom: -1px; cursor: pointer;
+}
+.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.tab:hover { color: var(--ink); }
+.tab:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+.panel { display: grid; gap: 28px; }
+.how article { display: grid; gap: 14px; max-width: 68ch; }
+.how h2 { font-family: var(--f-display); font-size: 22px; margin: 18px 0 0; text-wrap: balance; }
+.how h2:first-child { margin-top: 0; }
+.how h3 { font-family: var(--f-display); font-size: 17px; margin: 6px 0 0; color: var(--accent); }
+.how p, .how li { margin: 0; }
+.how ul, .how ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+.how b { font-weight: 600; }
+.how code { font-family: var(--f-mono); font-size: .92em; }
+.fig { margin: 4px 0; display: grid; gap: 8px; }
+.figscroll { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
+.figscroll svg { display: block; width: 100%; min-width: 420px; height: auto; }
+.fig figcaption { font-size: 13px; color: var(--muted); }
+.q-grid { stroke: var(--line); stroke-width: 1; }
+.q-a, .q-b { fill: none; stroke-width: 2.5; stroke-linejoin: round; }
+.q-a { stroke: var(--accent); } .q-b { stroke: var(--gold); }
+.q-lab { font-family: var(--f-mono); font-size: 11px; fill: var(--ink); }
+.q-ph { font-family: var(--f-mono); font-size: 11px; fill: var(--muted); }
+.q-cap { font-family: var(--f-mono); font-size: 10px; fill: var(--muted); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 
@@ -103,6 +132,12 @@ button.go:focus-visible, .slot:focus-within { outline: 3px solid var(--gold); ou
     <p class="lede">Turns your own <code>.neo</code> file into the Paddle Edition. A spinner wired to LEFT/RIGHT is detected the moment you turn it; until then the game plays exactly like the original. Everything happens in this page. Your ROM is never uploaded.</p>
   </header>
 
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button class="tab" role="tab" id="t-patch" aria-controls="tab-patch" aria-selected="true">Patch</button>
+    <button class="tab" role="tab" id="t-how" aria-controls="tab-how" aria-selected="false" tabindex="-1">How it works</button>
+  </nav>
+
+  <section class="panel" id="tab-patch" role="tabpanel" aria-labelledby="t-patch">
   <label class="slot" id="slot">
     <input type="file" id="pick" accept=".neo">
     <span class="big" id="slotBig">Drop a .neo file here</span>
@@ -147,6 +182,63 @@ button.go:focus-visible, .slot:focus-within { outline: 3px solid var(--gold); ou
     <p>Expected inputs are the standard <code>.neo</code> sets: <code>magdrop3</code>, <code>popbounc</code> and <code>pbobbl2n</code>. A file with a different program ROM is refused, and every patched result is checked against the build it should match.</p>
     <p>Inside Claude the result comes as a <code>.zip</code> holding the <code>.neo</code>, because .neo isn't a download type there. Opened as a local file in a browser, this page saves the <code>.neo</code> directly.</p>
   </div>
+  </section>
+
+  <section class="panel how" id="tab-how" role="tabpanel" aria-labelledby="t-how" hidden>
+    <article>
+      <h2>The idea</h2>
+      <p>Taito's F3 board reads its "sensor" spinners on two plain input lines, the same kind a joystick uses. Puchi Carat on F3 is the reference for how a spinner puzzle game should feel, with a knob that moves the paddle directly and menus that tick one item per notch. These patches bring that to three Neo Geo games without taking any buttons away. The spinner uses only the joystick's LEFT and RIGHT lines, so UP, DOWN and A to D still work.</p>
+
+      <h2>Two wires, one knob</h2>
+      <p>A spinner is a quadrature encoder. It drives two lines, A and B, that switch a quarter-cycle apart. Each change on either line is one count, and which line moves first gives the direction. In this patch, as on F3, LEFT is A and RIGHT is B.</p>
+      <figure class="fig">
+        <div class="figscroll"><svg viewBox="0 0 540 150" role="img" aria-label="Quadrature: phase A (LEFT) leads phase B (RIGHT) by a quarter cycle when turning clockwise; each change of either line is one count.">
+          <line x1="70" y1="12" x2="70" y2="112" class="q-grid"/><line x1="126" y1="12" x2="126" y2="112" class="q-grid"/><line x1="182" y1="12" x2="182" y2="112" class="q-grid"/><line x1="238" y1="12" x2="238" y2="112" class="q-grid"/><line x1="294" y1="12" x2="294" y2="112" class="q-grid"/><line x1="350" y1="12" x2="350" y2="112" class="q-grid"/><line x1="406" y1="12" x2="406" y2="112" class="q-grid"/><line x1="462" y1="12" x2="462" y2="112" class="q-grid"/><line x1="518" y1="12" x2="518" y2="112" class="q-grid"/>
+          <text x="10" y="42" class="q-lab">A · LEFT</text>
+          <text x="10" y="94" class="q-lab">B · RIGHT</text>
+          <path d="M70 52 L126 52 L126 22 L182 22 L238 22 L238 52 L294 52 L350 52 L350 22 L406 22 L462 22 L462 52 L518 52" class="q-a"/>
+          <path d="M70 104 L126 104 L182 104 L182 74 L238 74 L294 74 L294 104 L350 104 L406 104 L406 74 L462 74 L518 74" class="q-b"/>
+          <text x="98.0" y="128" text-anchor="middle" class="q-ph">00</text><text x="154.0" y="128" text-anchor="middle" class="q-ph">10</text><text x="210.0" y="128" text-anchor="middle" class="q-ph">11</text><text x="266.0" y="128" text-anchor="middle" class="q-ph">01</text><text x="322.0" y="128" text-anchor="middle" class="q-ph">00</text><text x="378.0" y="128" text-anchor="middle" class="q-ph">10</text><text x="434.0" y="128" text-anchor="middle" class="q-ph">11</text><text x="490.0" y="128" text-anchor="middle" class="q-ph">01</text>
+          <text x="518" y="146" text-anchor="end" class="q-cap">clockwise → one count per edge</text>
+        </svg></div>
+        <figcaption>Turning clockwise, A changes a quarter-cycle before B. Every edge on either line is one count; the order of the edges gives the direction.</figcaption>
+      </figure>
+
+      <h2>Reading it on a Neo Geo</h2>
+      <p>The Neo Geo has no hardware counter for this. The game only sees whatever LEFT and RIGHT are at the moment it reads them. A game reads its controls once a frame, about 60 times a second, and a quick turn can produce far more edges than that.</p>
+      <p>So the patch uses the video chip's raster timer, the IRQ2 interrupt that some games use for mid-screen effects. None of these three needed it for that. The timer is set to fire every 4 scanlines, about 3,900 times a second. On each tick, a few instructions read both ports, look up the previous and current phase in a 16-entry table, and add +1, −1 or 0 to a running count for each player. If both lines changed between two samples, that sample is ignored because its direction can't be known. This is the same rule as the F3 MiSTer core's spinner decoder.</p>
+      <p>The game's own code keeps writing the video chip's mode register. Every one of those writes is routed through a small stub that keeps the timer bits set. Without that, the first write would quietly switch sampling off.</p>
+
+      <h2>Knowing a spinner is there</h2>
+      <p>A lever can't press LEFT and RIGHT together, but a spinner passes through that state every few counts. The first time a port reads both at once, it's marked as a spinner and sampling starts. Until then the patched game behaves exactly like the original, and a lever on the other port stays a lever.</p>
+
+      <h2>Turning counts into play</h2>
+      <h3>Magical Drop III</h3>
+      <ul>
+        <li><b>A virtual paddle.</b> The knob moves an invisible paddle across the field, like Puchi Carat's: 4 counts per column, clamped at the walls. A column edge has to be passed by one extra count before it counts. After a short rest, the paddle settles back to the middle of its column, so every move from rest takes the same turn and small one-column moves are easy to repeat. The clown then walks to that column at the game's own pace.</li>
+        <li><b>Glide and highlight.</b> The clown and its aim line are drawn where the paddle actually is, so they glide instead of jumping. The target column pulses between darker and lighter. That comes from shaded copies of the balloon palettes in palette slots the game never uses, which the sprite engine swaps in for that column's balloons. The copies are refreshed a couple per frame so they follow the game's fades without slowing it down.</li>
+        <li><b>Optional magnet.</b> Over a column whose bottom balloon matches the colour in hand, the paddle moves at half speed so it's easy to stop there.</li>
+        <li><b>Menus.</b> Knob motion becomes one LEFT/RIGHT or UP/DOWN tap per 16 counts and is written into the game's own input records, so every menu reacts as if the lever were tapped. Character select walks the cards in reading order, and name entry turns at 4 counts per letter.</li>
+        <li><b>Extras.</b> MOUSE SPEED (x0.25 / x0.5 / x1) is a new item in the home option menu. The hidden characters are always unlocked.</li>
+      </ul>
+      <h3>Pop 'n Bounce</h3>
+      <p>This game already supports SNK's analog dial. It reads the dial's position each frame and turns the change into paddle speed. The patch simply feeds the spinner's count into those reads and switches the game into its own PADDLE mode once a spinner is seen. The physics and feel are the game's own.</p>
+      <h3>Puzzle Bobble 2</h3>
+      <p>The launcher's angle is a fixed-point number from −60 to +60 steps. Each count moves it one step, with fractions carried over between frames. The crank animation follows along. The crank's tick sound plays as it does with the lever, but at most once every 4 frames, because the game sends only one sound byte per frame and a fast spin would otherwise hold up the bubble sounds. Menus, the puzzle route map and difficulty select step one item per notch. There was no free space in the 1 MB program ROM, so the patch adds a second megabyte, which the hardware already maps at CPU address $200000.</p>
+
+      <h2>How it was made</h2>
+      <ol class="steps">
+        <li><b>A test bench.</b> Development used a headless Neo Geo emulator (a modified Geolith) driven from Python. Its simulated spinner produces real quadrature edges with the right timing inside each frame, including MiSTer's 1 ms USB input steps. It can also watch memory, log sounds and video writes, save states, and fault on misaligned memory accesses the way real hardware does.</li>
+        <li><b>Finding the game's variables.</b> Holding LEFT or RIGHT and comparing memory frame by frame turned up the values that move: the clown's column, the dial position, the launcher angle. A disassembler then found the code that reads the controls and acts on them. Those are the patch sites.</li>
+        <li><b>Small, guarded patches.</b> Each change replaces a few instructions with a jump into new code, and the build first checks that the original bytes are there. New code goes into unused ROM space, and its working memory sits where the game never writes.</li>
+        <li><b>Tuning by feel.</b> Rates, the edge buffer, re-centring, the glide and the highlight were settled by playing on MiSTer, with each idea checked on the test bench first.</li>
+        <li><b>Catching faults.</b> Scripted runs check the menus, play, and the lever path on unpatched ports, and long soak runs check stability. One bug only showed up on MiSTer: a stub that saved half a register inside an interrupt. The emulator turned out to be quietly rebooting from the same fault, and switching patch sites off one at a time found it.</li>
+      </ol>
+
+      <h2>This page</h2>
+      <p>The patcher carries only the bytes the patches change, never ROM data. It recognises your file by the CRC of its program ROM, writes the changes (the program ROM is stored byte-swapped in a <code>.neo</code>, so each byte goes to its swapped position), sets the name MiSTer shows, and checks the result's CRC against the build that was tested before saving it.</p>
+    </article>
+  </section>
 </main>
 
 <script>
@@ -258,6 +350,26 @@ $("go").addEventListener("click", async () => {
   setTimeout(() => URL.revokeObjectURL(url), 30000);
   log("Saved " + fname + ".", "ok");
 });
+
+// tabs
+const TABS = [["t-patch", "tab-patch"], ["t-how", "tab-how"]];
+function showTab(id) {
+  for (const [t, p] of TABS) {
+    const on = t === id;
+    $(t).setAttribute("aria-selected", on ? "true" : "false");
+    $(t).tabIndex = on ? 0 : -1;
+    $(p).hidden = !on;
+  }
+}
+for (const [t] of TABS) {
+  $(t).addEventListener("click", () => showTab(t));
+  $(t).addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+    const i = TABS.findIndex(([x]) => x === t), n = TABS[(i + (e.key === "ArrowRight" ? 1 : TABS.length - 1)) % TABS.length][0];
+    showTab(n); $(n).focus();
+  });
+}
+if (location.hash === "#how") showTab("t-how");
 
 $("pick").addEventListener("change", (e) => { const f = e.target.files[0]; if (f) load(f); e.target.value = ""; });
 const slot = $("slot");

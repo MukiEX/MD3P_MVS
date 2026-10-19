@@ -16,7 +16,9 @@ The ready-made patchers are in [`releases/`](releases/):
 - **`sensor_paddle_patcher.html`**: open it in a browser and drop in an
   original `.neo`. It works for all three games and offers the magnet or
   no-magnet choice for Magical Drop III. Everything happens locally, and the
-  result is checked against the tested build before it's saved.
+  result is checked against the tested build before it's saved. Its
+  "How it works" tab explains how the patches read the spinner and how they
+  were made.
 - **IPS patches** for any IPS tool, applied to the original `.neo`:
 
   | Patch | Gives |
