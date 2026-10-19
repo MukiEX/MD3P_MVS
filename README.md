@@ -9,6 +9,27 @@ patches to the original `.neo` files.
 | Pop 'n Bounce | `popbounc` | 237 | `popbounc_paddle.neo` |
 | Puzzle Bobble 2 | `pbobbl2n` | 248 | `pbobbl2n_paddle.neo` |
 
+## Patching your ROM
+
+The ready-made patchers are in [`releases/`](releases/):
+
+- **`sensor_paddle_patcher.html`**: open it in a browser and drop in an
+  original `.neo`. It works for all three games and offers the magnet or
+  no-magnet choice for Magical Drop III. Everything happens locally, and the
+  result is checked against the tested build before it's saved.
+- **IPS patches** for any IPS tool, applied to the original `.neo`:
+
+  | Patch | Gives |
+  |---|---|
+  | `magdrop3_paddle_neo.ips` | Magical Drop III, magnet on |
+  | `magdrop3_paddle_nomagnet_neo.ips` | Magical Drop III, magnet off |
+  | `popbounc_paddle_neo.ips` | Pop 'n Bounce |
+
+  Puzzle Bobble 2 has no IPS because its file grows past what IPS can
+  address, so use the HTML patcher for it.
+
+None of these files contain ROM data, only the patch's own bytes.
+
 ## How the spinner is read
 
 The spinner sits on the joystick's LEFT/RIGHT lines as a quadrature encoder,
@@ -76,7 +97,8 @@ roms/pbobbl2n.neo
 then:
 
 ```
-make          # .neo builds, IPS patches, and build/sensor_paddle_patcher.html
+make          # .neo builds in build/, and refreshes the patchers in releases/
+make neo      # only the .neo builds
 make check    # compare with the CRC32s of the builds tested on MiSTer
 ```
 
@@ -85,16 +107,8 @@ make check    # compare with the CRC32s of the builds tested on MiSTer
 - `make check` compares whole-file CRCs, so a `.neo` from a different packer
   (different header) can show DIFF even when the patched program ROM is
   correct. The browser patcher checks the program ROM only.
-- IPS files are made only for the same-size patches. Puzzle Bobble 2's file
-  grows, so use the `.neo` or the patcher for it.
-
-## Browser patcher
-
-`build/sensor_paddle_patcher.html` is one self-contained page:
-- Drop in an original `.neo` and it recognises the game, applies the patch,
-  checks the result against the tested build, and saves the Paddle Edition.
-- It has the magnet / no-magnet choice for Magical Drop III.
-- It contains only the changed bytes, no ROM data.
+- After changing a patch, run `make` and commit the updated `releases/`
+  files along with the source.
 
 ## Layout
 
@@ -102,6 +116,7 @@ make check    # compare with the CRC32s of the builds tested on MiSTer
 games/<set>/       patch source (.asm) and build.py for each game
 tools/             mkips.py, mkpatcher.py, check.py
 patcher/           HTML template for the browser patcher
+releases/          the patchers: sensor_paddle_patcher.html and the IPS files
 test/harness/      headless Geolith harness used for testing (see test/README.md)
 test/<set>/        the test scripts used during development
 ```

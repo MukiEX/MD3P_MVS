@@ -3,19 +3,22 @@
 #   then: make
 ROMS   ?= roms
 BUILD  ?= build
+REL    ?= releases
 VASM   ?= vasmm68k_mot
 PYTHON ?= python3
 
 NEO := $(BUILD)/magdrop3_paddle.neo $(BUILD)/magdrop3_paddle_nomagnet.neo \
        $(BUILD)/popbounc_paddle.neo $(BUILD)/pbobbl2n_paddle.neo
-IPS := $(BUILD)/magdrop3_paddle_neo.ips $(BUILD)/magdrop3_paddle_nomagnet_neo.ips \
-       $(BUILD)/popbounc_paddle_neo.ips
-PATCHER := $(BUILD)/sensor_paddle_patcher.html
+# Release files (committed in releases/; no ROM data in them)
+IPS := $(REL)/magdrop3_paddle_neo.ips $(REL)/magdrop3_paddle_nomagnet_neo.ips \
+       $(REL)/popbounc_paddle_neo.ips
+PATCHER := $(REL)/sensor_paddle_patcher.html
 
-all: $(NEO) $(IPS) $(PATCHER)
+all: $(NEO) release
 neo: $(NEO)
+release: $(IPS) $(PATCHER)
 
-$(BUILD):
+$(BUILD) $(REL):
 	mkdir -p $@
 
 # --- assemble (flags as used for the released builds) ---
@@ -39,22 +42,22 @@ $(BUILD)/pbobbl2n_paddle.neo: $(BUILD)/pb2.s28 $(ROMS)/pbobbl2n.neo games/pbobbl
 	$(PYTHON) games/pbobbl2n/build.py $(ROMS)/pbobbl2n.neo $< $@
 
 # --- IPS (same-size patches only; Puzzle Bobble 2 grows its P ROM) ---
-$(BUILD)/magdrop3_paddle_neo.ips: $(BUILD)/magdrop3_paddle.neo
+$(REL)/magdrop3_paddle_neo.ips: $(BUILD)/magdrop3_paddle.neo | $(REL)
 	$(PYTHON) tools/mkips.py $(ROMS)/magdrop3.neo $< $@
-$(BUILD)/magdrop3_paddle_nomagnet_neo.ips: $(BUILD)/magdrop3_paddle_nomagnet.neo
+$(REL)/magdrop3_paddle_nomagnet_neo.ips: $(BUILD)/magdrop3_paddle_nomagnet.neo | $(REL)
 	$(PYTHON) tools/mkips.py $(ROMS)/magdrop3.neo $< $@
-$(BUILD)/popbounc_paddle_neo.ips: $(BUILD)/popbounc_paddle.neo
+$(REL)/popbounc_paddle_neo.ips: $(BUILD)/popbounc_paddle.neo | $(REL)
 	$(PYTHON) tools/mkips.py $(ROMS)/popbounc.neo $< $@
 
 # --- browser patcher ---
-$(PATCHER): $(NEO) patcher/template.html tools/mkpatcher.py
+$(PATCHER): $(NEO) patcher/template.html tools/mkpatcher.py | $(REL)
 	$(PYTHON) tools/mkpatcher.py $(ROMS) $(BUILD) patcher/template.html $@
 
 # --- check against the CRCs of the tested builds ---
 check: $(NEO)
 	$(PYTHON) tools/check.py $(BUILD)
 
-clean:
+clean:                 # leaves releases/ alone
 	rm -rf $(BUILD)
 
-.PHONY: all neo check clean
+.PHONY: all neo release check clean
