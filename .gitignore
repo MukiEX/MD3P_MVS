@@ -5,7 +5,7 @@ build/
 *.bin
 *.zip
 *.ips
-!releases/*.ips
+!releases/patches/*.ips
 *.s28
 *.srec
 *.lst

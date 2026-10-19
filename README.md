@@ -13,13 +13,13 @@ patches to the original `.neo` files.
 
 The ready-made patchers are in [`releases/`](releases/):
 
-- **`sensor_paddle_patcher.html`**: open it in a browser and drop in an
+- **`MD3_MVS_PADDLE.html`**: open it in a browser and drop in an
   original `.neo`. It works for all three games and offers the magnet or
   no-magnet choice for Magical Drop III. Everything happens locally, and the
   result is checked against the tested build before it's saved. Its
   "How it works" tab explains how the patches read the spinner and how they
   were made.
-- **IPS patches** for any IPS tool, applied to the original `.neo`:
+- **IPS patches** in `releases/patches/` for any IPS tool, applied to the original `.neo`:
 
   | Patch | Gives |
   |---|---|
@@ -64,7 +64,7 @@ build in Taito F3 mode with F3 Step Clock set to Port Read.
 - Same-colour slowdown ("magnet") is on by default; the `_nomagnet` build
   turns it off.
 
-[`games/magdrop3/CHANGES.txt`](games/magdrop3/CHANGES.txt) has the full
+[`docs/CHANGES.txt`](docs/CHANGES.txt) has the full
 breakdown, including every patch site and the tuning block.
 
 **Pop 'n Bounce**
@@ -104,7 +104,7 @@ make neo      # only the .neo builds
 make check    # compare with the CRC32s of the builds tested on MiSTer
 ```
 
-- Each `build.py` checks the original bytes at every patch site and refuses a
+- Each `tools/build_<set>.py` checks the original bytes at every patch site and refuses a
   ROM that doesn't match.
 - `make check` compares whole-file CRCs, so a `.neo` from a different packer
   (different header) can show DIFF even when the patched program ROM is
@@ -115,10 +115,12 @@ make check    # compare with the CRC32s of the builds tested on MiSTer
 ## Layout
 
 ```
-games/<set>/       patch source (.asm) and build.py for each game
-tools/             mkips.py, mkpatcher.py, check.py
-patcher/           HTML template for the browser patcher
-releases/          the patchers: sensor_paddle_patcher.html and the IPS files
+src/<set>/         patch source (.asm) for each game
+tools/             build_<set>.py for each game, mkips.py, mkpatcher.py, check.py
+web/               HTML template for the browser patcher
+docs/              CHANGES.txt (Magical Drop III breakdown)
+releases/          MD3_MVS_PADDLE.html; IPS files in releases/patches/
 test/harness/      headless Geolith harness used for testing (see test/README.md)
 test/<set>/        the test scripts used during development
+third_party/       Geolith debug-hook patch for the test harness
 ```

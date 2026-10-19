@@ -10,7 +10,7 @@ reference and aren't needed to build anything.
     and save and load states.
   - Address errors are emulated, so odd-address word accesses fault the way
     they do on hardware.
-- `harness/geolith-harness.patch`: the changes to geolith-libretro (upstream
+- `../third_party/geolith-harness.patch`: the changes to geolith-libretro (upstream
   commit `2dc88e3`) that the harness needs:
   - debug hooks;
   - address-error emulation;

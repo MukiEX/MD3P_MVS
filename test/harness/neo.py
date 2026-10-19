@@ -6,7 +6,7 @@ signals can toggle many times per frame exactly like a real encoder.
 """
 import ctypes as C, os, struct
 
-# Patched Geolith core (see geolith-harness.patch) and a folder holding neogeo.zip
+# Patched Geolith core (see third_party/geolith-harness.patch) and a folder holding neogeo.zip
 CORE = os.environ.get('GEOLITH_CORE', 'geolith_libretro.so')
 SYSDIR = os.environ.get('NEOGEO_SYSDIR', 'sys')
 MCYC_PER_FRAME = 405504
