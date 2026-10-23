@@ -196,7 +196,7 @@ button.go:focus-visible, .slot:focus-within { outline: 3px solid var(--accent); 
   <section class="panel how" id="tab-how" role="tabpanel" aria-labelledby="t-how" hidden>
     <article>
       <h2>The idea</h2>
-      <p>Taito's F3 board reads its "sensor" spinners on two plain input lines, the same kind a joystick uses. Puchi Carat on F3 is the reference for how a spinner puzzle game should feel, with a knob that moves the paddle directly and menus that tick one item per notch. These patches bring that to three Neo Geo games without taking any buttons away. The spinner uses only the joystick's LEFT and RIGHT lines, so UP, DOWN and A to D still work.</p>
+      <p>Taito's F3 board reads its "sensor" spinners on two plain input lines, the same kind a joystick uses. Puchi Carat on F3 is the reference for how a spinner puzzle game should feel, with a knob that moves the paddle directly and menus that tick one item per notch. These patches bring that to three Neo Geo games without taking any buttons away. An adapter puts the spinner on the joystick's LEFT and RIGHT lines, so UP, DOWN and A to D still work. An encoder built into a real pad can instead go across the d-pad pairs.</p>
 
       <h2>Two wires, one knob</h2>
       <p>A spinner is a quadrature encoder. It drives two lines, A and B, that switch a quarter-cycle apart. Each change on either line is one count, and which line moves first gives the direction. In this patch, as on F3, LEFT is A and RIGHT is B.</p>
@@ -219,7 +219,9 @@ button.go:focus-visible, .slot:focus-within { outline: 3px solid var(--accent); 
       <p>The game's own code keeps writing the video chip's mode register. Every one of those writes is routed through a small stub that keeps the timer bits set. Without that, the first write would quietly switch sampling off.</p>
 
       <h2>Knowing a spinner is there</h2>
-      <p>A lever can't press LEFT and RIGHT together, but a spinner passes through that state every few counts. The first time a port reads both at once, it's marked as a spinner and sampling starts. Until then the patched game behaves exactly like the original, and a lever on the other port stays a lever.</p>
+      <p>A lever can't press LEFT and RIGHT together, but a spinner on those lines passes through that state every few counts. The first time a port reads both at once, it's marked as a spinner and sampling starts.</p>
+      <p>An encoder inside a real pad is wired across the d-pad pairs instead: LEFT or RIGHT is phase A, UP or DOWN is phase B. For that wiring, the first diagonal starts sampling, and a quick spin latches it: 12 steps the same way, each within about 30 ms, which no thumb on a d-pad produces. From then on the whole d-pad belongs to the knob.</p>
+      <p>Until either happens, the patched game behaves exactly like the original, and a lever on the other port stays a lever.</p>
 
       <h2>Turning counts into play</h2>
       <h3>Magical Drop III</h3>
@@ -258,7 +260,7 @@ button.go:focus-visible, .slot:focus-within { outline: 3px solid var(--accent); 
               <li><code>releases/</code> is committed output: this page as <code>MD3_MVS_PADDLE.html</code>, and the IPS files in <code>releases/patches/</code>.</li>
               <li><code>test/</code> is the harness, and <code>third_party/</code> holds the Geolith hook patch.</li>
             </ul></li>
-          <li><b>Build.</b> Put the original <code>.neo</code> files in <code>roms/</code> and run <code>make</code>, then <code>make check</code>, which compares whole-file CRC32s with the builds tested on MiSTer.
+          <li><b>Build.</b> Put the original <code>.neo</code> files in <code>roms/</code> and run <code>make</code>, then <code>make check</code>, which compares whole-file CRC32s with the released builds.
             <ul>
               <li>The assembler is vasm <code>vasmm68k_mot -Fsrec -s28</code>. Magical Drop III and Pop 'n Bounce use the default optimisation; Puzzle Bobble 2 uses <code>-no-opt</code>. Changing the flags changes the bytes.</li>
               <li><code>-DMAGNET=0</code> gives the no-magnet edition, which differs by one byte (CPU <code>$4E017</code>).</li>
@@ -284,7 +286,13 @@ button.go:focus-visible, .slot:focus-within { outline: 3px solid var(--accent); 
               <li>The timer reload is <code>4*384-1</code> pixel clocks, and LSPCMODE bits are <code>$D0</code> (IRQ, reload at VBlank, repeat).</li>
             </ul></li>
           <li><b>Every LSPCMODE write the game makes must be routed through a stub</b> that ORs the timer bits back in. Otherwise sampling silently stops. When a game writes it in VBlank, re-arm the timer afterwards.</li>
-          <li><b>Detection</b> is LEFT and RIGHT pressed together. Patch RAM starts with the magic <code>'PDL1'</code> and is rebuilt whenever that's missing.</li>
+          <li><b>Detection.</b>
+            <ul>
+              <li>LEFT/RIGHT wiring: LEFT and RIGHT pressed together.</li>
+              <li>D-pad pairs (phase = <code>(U|D)&lt;&lt;1 | (L|R)</code>): a diagonal sets <code>X_CAND</code> and the timer flag. Then <code>pd_pairdet</code> in the IRQ latches <code>X_PAIRS</code> + <code>DET</code> after <code>PAIR_RUN</code> = 12 same-way steps, each within <code>PAIR_IDLE</code> = 120 samples.</li>
+              <li>Once latched, the decoder counts on the pairs phase, and all four directions are masked from the game.</li>
+              <li>Patch RAM starts with the magic <code>'PDL1'</code> and is rebuilt whenever that's missing.</li>
+            </ul></li>
           <li><b>Hooks running inside an interrupt must save every register they touch, in full.</b> Puzzle Bobble 2 crashed on MiSTer because a VBlank stub saved only the low word of <code>d0</code>. Geolith just rebooted silently on the same fault, which is why it took a while to find.</li>
           <li><b>Word and long accesses must be at even addresses.</b> The harness faults on odd ones, the same as hardware.</li>
           <li><b><code>$10F000</code></b> sits under the boot stack. The BIOS RAM test writes it only at power-on, so it's safe once the game runs.</li>
@@ -303,11 +311,12 @@ button.go:focus-visible, .slot:focus-within { outline: 3px solid var(--accent); 
               <li><code>+16</code> hyst 1, <code>+18</code> settle 8, <code>+20</code> click 0</li>
               <li><code>+22</code> speed 2, <code>+23</code> magnet, <code>+24</code> dark 5 (pulse), <code>+25</code> glide 1</li>
             </ul></li>
-          <li><b>RAM</b> <code>$10F000–$10F05F</code>:
+          <li><b>RAM</b> <code>$10F000–$10F08F</code>:
             <ul>
               <li>Magic, LSPC OR/value, claim and map flags, MOUSE SPEED at <code>+$0A</code>, and column-shade IDs at <code>+$0C</code>/<code>+$0D</code>/<code>+$0E</code>.</li>
               <li>Player blocks at <code>+$10</code>/<code>+$30</code>: phase, detected flag, count, then three consumers (menu <code>+4</code>, screen <code>+10</code>, game <code>+16</code>).</li>
               <li>Glide state at <code>+$50</code>.</li>
+              <li>Wiring state at player block <code>+$50</code> (<code>$10F060</code>/<code>$10F080</code>): <code>X_PAIRS</code>, <code>X_CAND</code>, <code>X_PREV</code>, <code>X_RUN</code>, <code>X_IDLE</code>.</li>
             </ul></li>
           <li><b>Game RAM</b>:
             <ul>
@@ -330,7 +339,7 @@ button.go:focus-visible, .slot:focus-within { outline: 3px solid var(--accent); 
         <summary>Pop 'n Bounce (popbounc)</summary>
         <ul>
           <li><b>Code</b> in free space <code>$E85C2–$100000</code>. Tuning block at <code>$E9000</code>: <code>+4</code> shift (counts per dial step = 2^n), <code>+5</code> invert, <code>+6</code> reload, <code>+8</code> lspcbits.</li>
-          <li><b>RAM</b> <code>$10C000</code> (the game never touches <code>$109012–$10F063</code>): magic, LSPC OR, any-spinner flag at <code>+6</code>, player blocks at <code>+$10</code>/<code>+$20</code>.</li>
+          <li><b>RAM</b> <code>$10C000</code> (the game never touches <code>$109012–$10F063</code>): magic, LSPC OR, any-spinner flag at <code>+6</code>, timer-wanted flag at <code>+7</code>, player blocks at <code>+$10</code>/<code>+$20</code> (phase, detected flag, count, then the wiring state at <code>+4</code>).</li>
           <li><b>The game's dial</b> is read as 7 bits (<code>andi #$7F</code>) at <code>$2306</code> (init) and <code>$2350</code> (each frame).
             <ul>
               <li>Deltas are stored at <code>$107E52</code>/<code>$107E5A</code>, and play uses delta/2 to index the speed table <code>$10A6A</code>.</li>
@@ -354,7 +363,7 @@ button.go:focus-visible, .slot:focus-within { outline: 3px solid var(--accent); 
               <li>Code runs from CPU <code>$200000</code>, which is P offset <code>$100000</code>.</li>
               <li>Tuning block at <code>$200004</code>: <code>+4</code> gain (×256 = steps per count), <code>+6</code> kmenu 16, <code>+8</code> invert, <code>+9</code> tick, <code>+10</code> reload, <code>+12</code> lspcbits <code>$D8</code>.</li>
             </ul></li>
-          <li><b>RAM</b> <code>$10F000</code>: magic, frame counter <code>+4</code>, any-spinner flag <code>+6</code>, player blocks at <code>+$10</code>/<code>+$20</code> (count, menu accumulator, launcher last count/frame, tick frame).</li>
+          <li><b>RAM</b> <code>$10F000–$10F05F</code>: magic, frame counter <code>+4</code>, any-spinner flag <code>+6</code> (also switches vertical menus to the knob), timer-wanted flag <code>+7</code>, player blocks at <code>+$10</code>/<code>+$20</code> (count, menu accumulator, launcher last count/frame, tick frame), wiring state at block <code>+$30</code>.</li>
           <li><b>Game</b> (<code>a5 = $108000</code>):
             <ul>
               <li>P1 held, active low, at <code>-$700C(a5)</code>; new presses at <code>-$700B</code>.</li>

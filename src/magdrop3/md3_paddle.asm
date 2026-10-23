@@ -47,7 +47,18 @@ PD_DKID1        equ PD_BASE+$0d     ; .b ... for P2
 PD_DKIX         equ PD_BASE+$0e     ; .b next dark palette to refresh ($FF = all)
 PD_P1           equ PD_BASE+$10
 PD_P2           equ PD_BASE+$30
-PD_SIZE         equ $60
+PD_SIZE         equ $90
+; per-player wiring state, at the player block + $50 (P1 $10F060, P2 $10F080)
+X_PAIRS         equ $50             ; .b $FF: encoder across the d-pad pairs
+                                    ;    (phase A = LEFT|RIGHT, B = UP|DOWN)
+X_CAND          equ $51             ; .b $FF: a diagonal was seen, so watch the
+                                    ;    pairs for a spin (sampling runs)
+X_PREV          equ $52             ; .b last pairs phase
+X_RUN           equ $53             ; .b signed run of same-way pairs steps
+X_IDLE          equ $54             ; .w samples since the last pairs step
+PAIR_RUN        equ 12              ; steps the same way to latch the pairs wiring
+PAIR_IDLE       equ 120             ; samples (~30 ms) between steps, at most: a thumb
+                                    ; on a d-pad is far slower than a quick spin
 PD_GLIDE        equ PD_BASE+$50     ; 2 x 8 bytes (P1 field, P2 field): last clown draw
 GL_X            equ 0               ; .w X drawn
 GL_BASE         equ 2               ; .w the game's X for that column
@@ -222,22 +233,30 @@ pd_qtab:
 ; ---------------------------------------------------------------------
 pd_irq2:
         move.w  #2,REG_IRQACK
-        movem.l d0-d1/a0,-(sp)
+        movem.l d0-d2/a0-a1,-(sp)
         lea     PD_P1,a0
         move.b  REG_P1CNT,d0
         bsr     pd_decode
         lea     PD_P2,a0
         move.b  REG_P2CNT,d0
         bsr     pd_decode
-        movem.l (sp)+,d0-d1/a0
+        movem.l (sp)+,d0-d2/a0-a1
         rte
 
-; d0.b = raw port (active low), a0 = player block
+; d0.b = raw port (active low), a0 = player block. Uses d0-d2/a1.
 pd_decode:
         not.b   d0
-        lsr.b   #2,d0
+        tst.b   X_CAND(a0)
+        beq.s   .wiring
+        bsr.s   pd_pairdet
+.wiring:
+        tst.b   X_PAIRS(a0)
+        beq.s   .lr
+        bsr.s   pd_pairph           ; d0 = (U|D)<<1 | (L|R)
+        bra.s   .count
+.lr:    lsr.b   #2,d0
         andi.w  #3,d0               ; d0 = R<<1 | L
-        moveq   #0,d1
+.count: moveq   #0,d1
         move.b  PREV(a0),d1
         move.b  d0,PREV(a0)
         add.b   d1,d1
@@ -247,6 +266,67 @@ pd_decode:
         ext.w   d0
         add.w   d0,CNT(a0)
         rts
+
+; d0.b = port, active high -> d0.w = pairs phase: bit0 = LEFT|RIGHT (A),
+; bit1 = UP|DOWN (B). Uses d2.
+pd_pairph:
+        move.b  d0,d2
+        andi.b  #J_LEFT|J_RIGHT,d2
+        sne     d2
+        andi.b  #1,d2
+        andi.b  #J_UP|J_DOWN,d0
+        sne     d0
+        andi.b  #2,d0
+        or.b    d2,d0
+        andi.w  #3,d0
+        rts
+
+; A diagonal has been seen on this port: an encoder inside a real pad
+; (A on LEFT/RIGHT, B on UP/DOWN) shows as a quick run of same-way
+; quadrature steps on the pairs, which no thumb on a d-pad produces.
+; PAIR_RUN of them in a row latches the pairs wiring.
+; d0.b = port, active high (kept). Uses d1-d2/a1.
+pd_pairdet:
+        tst.b   DET(a0)
+        bne.s   .r
+        move.w  d0,-(sp)
+        bsr.s   pd_pairph
+        moveq   #0,d1
+        move.b  X_PREV(a0),d1
+        cmp.b   d0,d1
+        bne.s   .chg
+        addq.w  #1,X_IDLE(a0)
+        cmpi.w  #PAIR_IDLE,X_IDLE(a0)
+        bcs.s   .out
+        move.w  #PAIR_IDLE,X_IDLE(a0)
+        clr.b   X_RUN(a0)
+        bra.s   .out
+.chg:   move.b  d0,X_PREV(a0)
+        clr.w   X_IDLE(a0)
+        add.b   d1,d1
+        add.b   d1,d1
+        or.b    d0,d1
+        lea     pd_qtab(pc),a1
+        move.b  (a1,d1.w),d1
+        beq.s   .bad                ; both phases changed
+        move.b  X_RUN(a0),d2
+        eor.b   d1,d2
+        bmi.s   .new                ; turned the other way
+        add.b   d1,X_RUN(a0)
+        move.b  X_RUN(a0),d2
+        bpl.s   .abs
+        neg.b   d2
+.abs:   cmpi.b  #PAIR_RUN,d2
+        bcs.s   .out
+        st      X_PAIRS(a0)         ; latched: count on the pairs from here
+        move.b  d0,PREV(a0)
+        st      DET(a0)
+        bra.s   .out
+.new:   move.b  d1,X_RUN(a0)
+        bra.s   .out
+.bad:   clr.b   X_RUN(a0)
+.out:   move.w  (sp)+,d0
+.r:     rts
 
 ; ---------------------------------------------------------------------
 ;  VBlank port reads. Return d1 = port byte (active low) like the
@@ -272,12 +352,30 @@ pd_rd_common:
         not.b   d0
         andi.b  #J_LEFT|J_RIGHT,d0
         cmpi.b  #J_LEFT|J_RIGHT,d0  ; both "pressed": only a spinner does that
-        bne.s   .out
-        st      DET(a0)
+        beq.s   .lr
+        tst.b   X_CAND(a0)
+        bne.s   .arm
+        move.b  d1,d0               ; a diagonal: maybe an encoder across the
+        not.b   d0                  ; d-pad pairs. Start sampling and watch
+        andi.b  #J_UP|J_DOWN,d0     ; for a spin (pd_pairdet)
+        beq.s   .out
+        move.b  d1,d0
+        not.b   d0
+        andi.b  #J_LEFT|J_RIGHT,d0
+        beq.s   .out
+        st      X_CAND(a0)
+        move.w  cfg_lspcbits(pc),PD_LSPCOR
+        bra.s   .arm
+.lr:    st      DET(a0)
         move.b  #3,PREV(a0)         ; we are sitting on phase 11 right now
         move.w  cfg_lspcbits(pc),PD_LSPCOR
 .spinner:
+        tst.b   X_PAIRS(a0)
+        bne.s   .pairs
         ori.b   #J_LEFT|J_RIGHT,d1  ; L/R belong to the encoder: read released
+        bra.s   .arm
+.pairs: ori.b   #J_UP|J_DOWN|J_LEFT|J_RIGHT,d1  ; the whole d-pad does
+.arm:
         ; keep the sampling timer armed (the BIOS IRQ2 handler switches it off)
         move.w  #0,REG_TIMERHIGH
         move.w  cfg_reload(pc),REG_TIMERLOW

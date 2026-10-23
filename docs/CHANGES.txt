@@ -12,11 +12,12 @@ dropped are left out.
 
 1. THE CONTROLLER: TAITO F3 "SENSOR" SPINNER
 --------------------------------------------
-- Wiring: the spinner uses each player's joystick LEFT and RIGHT lines
-  as a quadrature encoder, the same as the Taito F3 JP3 "sensor" input
-  and the F3 MiSTer rf_spinner.sv:
-      LEFT  = phase A
-      RIGHT = phase B
+- Wiring: the spinner is a quadrature encoder on the joystick's d-pad
+  lines, the same as the Taito F3 JP3 "sensor" input and the F3 MiSTer
+  rf_spinner.sv. Two wirings are recognised:
+      LEFT/RIGHT (adapters):        LEFT = phase A, RIGHT = phase B
+      across the d-pad pairs        LEFT or RIGHT = phase A,
+      (an encoder in a real pad):   UP or DOWN    = phase B
       A leading B (00 -> 10 -> 11 -> 01) = +1 = clockwise = right/down
   A sample where both phases changed at once is ignored.
 - Sampling: the Neo Geo has no hardware counter for this, so the
@@ -25,10 +26,16 @@ dropped are left out.
   the decoder. The game's own LSPCMODE writes (0x15BC, 0x20A2, 0x25C00,
   0x25EE2, 0x26106) are routed through a stub that keeps the timer bits
   set.
-- Auto-detection: a port becomes a spinner the first time LEFT and
-  RIGHT read pressed together. A lever can't do that. Until then
-  nothing is changed: lever play is identical to the original, and the
-  sampling timer stays off.
+- Auto-detection:
+    - LEFT/RIGHT: a port becomes a spinner the first time LEFT and RIGHT
+      read pressed together. A lever can't do that.
+    - D-pad pairs: the first diagonal starts sampling (nothing else
+      changes), and the pairs wiring latches after a quick spin: 12
+      quadrature steps the same way on the pairs, each within 120
+      samples (about 30 ms). A thumb on a d-pad can't do that.
+      Once latched, all four directions belong to the knob.
+  Until then lever play is identical to the original, and the sampling
+  timer stays off until the first L+R or diagonal.
 - P1 and P2 are detected and counted separately.
 
 
@@ -126,14 +133,16 @@ Hook: 0x18BC8, the lever move logic.
 ------------------------
 - New code: the unused $FF area of the program ROM, from 0x4E000 (the
   free area 0x4DB16-0x66000). The ROM size is unchanged.
-- RAM: $10F000-$10F05F, above the game's stack top and below the
+- RAM: $10F000-$10F08F, above the game's stack top and below the
   BIOS's RAM. It holds:
     - a 'PDL1' marker (if it's missing, the block is rebuilt);
     - the timer bits, menu mapping, MOUSE SPEED and column-shading
       state;
     - a $20-byte block per player: phase, detected flag, count, and
       separate menu, screen and in-game accumulators;
-    - the clown glide state.
+    - the clown glide state;
+    - per-player wiring state at $10F060 / $10F080: pairs latched,
+      diagonal seen, last pairs phase, run, idle samples.
 - build.py checks the original bytes at every patch site before
   writing, so a wrong ROM is refused.
 

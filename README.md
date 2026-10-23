@@ -34,19 +34,31 @@ None of these files contain ROM data, only the patch's own bytes.
 
 ## How the spinner is read
 
-The spinner sits on the joystick's LEFT/RIGHT lines as a quadrature encoder,
-like the F3's JP3 sensor input:
+The spinner is a quadrature encoder on the joystick's d-pad lines, like the
+F3's JP3 sensor input. Two wirings are recognised:
 
-- LEFT = phase A, RIGHT = phase B
-- A leading B (`00 → 10 → 11 → 01`) = +1 = clockwise = right/down
-- a sample where both phases changed is ignored
+- **LEFT/RIGHT** (adapters): LEFT = phase A, RIGHT = phase B. UP, DOWN and the
+  buttons still come from the joystick.
+- **Across the d-pad pairs** (an encoder inside a real pad): LEFT or RIGHT =
+  phase A, UP or DOWN = phase B. The whole d-pad then belongs to the knob.
+
+In both, A leading B (`00 → 10 → 11 → 01`) = +1 = clockwise = right/down, and a
+sample where both phases changed is ignored. 4 edges move one column in
+Magical Drop III.
 
 The Neo Geo has no counter for this, so each patch points the LSPC raster timer
 (IRQ2) at a decoder that samples both ports every 4 lines (about 3.9 kHz).
 
-A port becomes a spinner the first time LEFT and RIGHT read pressed together,
-which a lever can't do. Until then the game is unchanged and the timer stays off.
-UP, DOWN and the buttons always come from the joystick.
+Detection works like this:
+
+- **LEFT/RIGHT:** a port becomes a spinner the first time LEFT and RIGHT read
+  pressed together, which a lever can't do.
+- **D-pad pairs:** a diagonal starts sampling, and the wiring latches after
+  a quick spin: 12 steps the same way, each within about 30 ms. A thumb on a
+  d-pad can't do that.
+
+Until then the game is unchanged, and the timer stays off until the first
+L+R or diagonal.
 
 Targets: MiSTer NeoGeo core, NeoSD and real MVS/AES. On MiSTer, use a mouse or
 spinner mapped to LEFT/RIGHT quadrature, for example the PaddleNeoGeo core
@@ -101,7 +113,7 @@ then:
 ```
 make          # .neo builds in build/, and refreshes the patchers in releases/
 make neo      # only the .neo builds
-make check    # compare with the CRC32s of the builds tested on MiSTer
+make check    # compare with the CRC32s of the released builds
 ```
 
 - Each `tools/build_<set>.py` checks the original bytes at every patch site and refuses a
