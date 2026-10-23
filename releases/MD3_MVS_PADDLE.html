@@ -113,6 +113,14 @@ button.go:focus-visible, .slot:focus-within { outline: 3px solid var(--accent); 
 .how ul, .how ol { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
 .how b { font-weight: 700; }
 .how code { font-family: var(--f-mono); font-size: .92em; }
+.ref { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 0 14px; }
+.ref + .ref { margin-top: -6px; }
+.ref summary { font-family: var(--f-body); font-weight: 700; font-size: 1rem; padding: 10px 0; cursor: pointer; }
+.ref summary:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.ref[open] { padding-bottom: 14px; }
+.ref ul { font-size: .9rem; }
+.ref ul ul { margin-top: 6px; gap: 4px; }
+.ref code { overflow-wrap: anywhere; }
 .fig { margin: 4px 0; display: grid; gap: 8px; }
 .figscroll { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
 .figscroll svg { display: block; width: 100%; min-width: 420px; height: auto; }
@@ -235,6 +243,156 @@ button.go:focus-visible, .slot:focus-within { outline: 3px solid var(--accent); 
         <li><b>Tuning by feel.</b> Rates, the edge buffer, re-centring, the glide and the highlight were settled by playing on MiSTer, with each idea checked on the test bench first.</li>
         <li><b>Catching faults.</b> Scripted runs check the menus, play, and the lever path on unpatched ports, and long soak runs check stability. One bug only showed up on MiSTer: a stub that saved half a register inside an interrupt. The emulator turned out to be quietly rebooting from the same fault, and switching patch sites off one at a time found it.</li>
       </ol>
+
+      <h2>Technical reference</h2>
+      <p>Notes for picking the work up again: where everything lives, how the patches hook in, and the rules learned the hard way. The full per-site list for Magical Drop III is in <code>docs/CHANGES.txt</code>.</p>
+
+      <details class="ref">
+        <summary>Repo, build and file format</summary>
+        <ul>
+          <li><b>Layout.</b>
+            <ul>
+              <li><code>src/&lt;set&gt;/</code> holds each patch's <code>.asm</code>.</li>
+              <li><code>tools/</code> has <code>build_&lt;set&gt;.py</code>, <code>mkips.py</code>, <code>mkpatcher.py</code> and <code>check.py</code>.</li>
+              <li><code>web/patcher.tpl.html</code> is this page's template.</li>
+              <li><code>releases/</code> is committed output: this page as <code>MD3_MVS_PADDLE.html</code>, and the IPS files in <code>releases/patches/</code>.</li>
+              <li><code>test/</code> is the harness, and <code>third_party/</code> holds the Geolith hook patch.</li>
+            </ul></li>
+          <li><b>Build.</b> Put the original <code>.neo</code> files in <code>roms/</code> and run <code>make</code>, then <code>make check</code>, which compares whole-file CRC32s with the builds tested on MiSTer.
+            <ul>
+              <li>The assembler is vasm <code>vasmm68k_mot -Fsrec -s28</code>. Magical Drop III and Pop 'n Bounce use the default optimisation; Puzzle Bobble 2 uses <code>-no-opt</code>. Changing the flags changes the bytes.</li>
+              <li><code>-DMAGNET=0</code> gives the no-magnet edition, which differs by one byte (CPU <code>$4E017</code>).</li>
+            </ul></li>
+          <li><b><code>.neo</code> format.</b>
+            <ul>
+              <li>The header is 4096 bytes. ROM sizes are little-endian dwords from offset 4: P, S, M, V1, V2, C.</li>
+              <li>The NGH number is at offset 40. The name, at offset 44 (33 bytes), is what MiSTer shows.</li>
+              <li>The P ROM follows the header, stored word-swapped: CPU byte <code>X</code> is at file offset <code>4096 + (X ^ 1)</code>.</li>
+            </ul></li>
+          <li><b><code>tools/build_&lt;set&gt;.py</code></b> checks the original bytes at every patch site (<code>EXPECT</code>) before writing. Records outside a patch site or the declared free area are refused.</li>
+          <li><b>Patcher data.</b> <code>mkpatcher.py</code> diffs the built P ROM against the original into <code>[cpu_offset, base64]</code> runs. The page recognises a file by the CRC32 of the raw (still swapped) P ROM in the <code>.neo</code>.</li>
+        </ul>
+      </details>
+
+      <details class="ref">
+        <summary>Shared spinner code and hard-won rules</summary>
+        <ul>
+          <li><b>Decoder.</b> Vector <code>$68</code> (IRQ2) points at the decoder.
+            <ul>
+              <li>It acks with <code>move.w #2,$3C000C</code>, then for each port reads <code>$300000</code> / <code>$340000</code> (active low).</li>
+              <li>Phase is <code>R&lt;&lt;1 | L</code>, and the table is indexed by <code>prev&lt;&lt;2 | cur</code>: <code>0,1,-1,0, -1,0,0,1, 1,0,0,-1, 0,-1,1,0</code>.</li>
+              <li>The timer reload is <code>4*384-1</code> pixel clocks, and LSPCMODE bits are <code>$D0</code> (IRQ, reload at VBlank, repeat).</li>
+            </ul></li>
+          <li><b>Every LSPCMODE write the game makes must be routed through a stub</b> that ORs the timer bits back in. Otherwise sampling silently stops. When a game writes it in VBlank, re-arm the timer afterwards.</li>
+          <li><b>Detection</b> is LEFT and RIGHT pressed together. Patch RAM starts with the magic <code>'PDL1'</code> and is rebuilt whenever that's missing.</li>
+          <li><b>Hooks running inside an interrupt must save every register they touch, in full.</b> Puzzle Bobble 2 crashed on MiSTer because a VBlank stub saved only the low word of <code>d0</code>. Geolith just rebooted silently on the same fault, which is why it took a while to find.</li>
+          <li><b>Word and long accesses must be at even addresses.</b> The harness faults on odd ones, the same as hardware.</li>
+          <li><b><code>$10F000</code></b> sits under the boot stack. The BIOS RAM test writes it only at power-on, so it's safe once the game runs.</li>
+          <li><b>NGH numbers are special-cased</b> by Geolith and MiSTer's loader (V-Liner is <code>0999</code>/<code>03E7</code>, for example). Don't reuse one for homebrew.</li>
+        </ul>
+      </details>
+
+      <details class="ref">
+        <summary>Magical Drop III (magdrop3)</summary>
+        <ul>
+          <li><b>Code</b> lives in free space <code>$4DB16–$66000</code>, starting at <code>$4E000</code>.</li>
+          <li><b>Tuning block</b> at <code>$4E000</code>, starting with <code>"PDCF"</code>:
+            <ul>
+              <li><code>+4</code> kmenu 16, <code>+6</code> kgame 4, <code>+8</code> invert, <code>+9</code> map 3</li>
+              <li><code>+10</code> reload, <code>+12</code> lspcbits, <code>+14</code> kname 4</li>
+              <li><code>+16</code> hyst 1, <code>+18</code> settle 8, <code>+20</code> click 0</li>
+              <li><code>+22</code> speed 2, <code>+23</code> magnet, <code>+24</code> dark 5 (pulse), <code>+25</code> glide 1</li>
+            </ul></li>
+          <li><b>RAM</b> <code>$10F000–$10F05F</code>:
+            <ul>
+              <li>Magic, LSPC OR/value, claim and map flags, MOUSE SPEED at <code>+$0A</code>, and column-shade IDs at <code>+$0C</code>/<code>+$0D</code>/<code>+$0E</code>.</li>
+              <li>Player blocks at <code>+$10</code>/<code>+$30</code>: phase, detected flag, count, then three consumers (menu <code>+4</code>, screen <code>+10</code>, game <code>+16</code>).</li>
+              <li>Glide state at <code>+$50</code>.</li>
+            </ul></li>
+          <li><b>Game RAM</b>:
+            <ul>
+              <li>Input records <code>$100044</code>/<code>$100048</code>: <code>{cur, prev, press, press2}</code>, active high.</li>
+              <li>Released-tick counter <code>$100066</code>.</li>
+              <li>Option-menu working copy at <code>$1014E4</code>; MOUSE SPEED rides at <code>$1014E8</code>.</li>
+            </ul></li>
+          <li><b>Hooks</b>:
+            <ul>
+              <li>VBlank port reads at <code>$0D0E</code>/<code>$0D3A</code>, tick release at <code>$0E10</code>.</li>
+              <li>Clown movement at <code>$18BC8</code>, character select at <code>$27698</code>, name entry at <code>$9DCC</code>.</li>
+              <li>Sprite tile loop at <code>$10FA8</code> (column shading via palettes <code>$98–$9F</code>, copied from <code>$10–$17</code>).</li>
+              <li>Clown X at <code>$19196</code>/<code>$19268</code>, aim line at <code>$152A0</code>.</li>
+              <li>Option menu at <code>$10A24</code>–<code>$10BD0</code>; unlock at <code>$27246</code>.</li>
+            </ul></li>
+        </ul>
+      </details>
+
+      <details class="ref">
+        <summary>Pop 'n Bounce (popbounc)</summary>
+        <ul>
+          <li><b>Code</b> in free space <code>$E85C2–$100000</code>. Tuning block at <code>$E9000</code>: <code>+4</code> shift (counts per dial step = 2^n), <code>+5</code> invert, <code>+6</code> reload, <code>+8</code> lspcbits.</li>
+          <li><b>RAM</b> <code>$10C000</code> (the game never touches <code>$109012–$10F063</code>): magic, LSPC OR, any-spinner flag at <code>+6</code>, player blocks at <code>+$10</code>/<code>+$20</code>.</li>
+          <li><b>The game's dial</b> is read as 7 bits (<code>andi #$7F</code>) at <code>$2306</code> (init) and <code>$2350</code> (each frame).
+            <ul>
+              <li>Deltas are stored at <code>$107E52</code>/<code>$107E5A</code>, and play uses delta/2 to index the speed table <code>$10A6A</code>.</li>
+              <li>The game's LSPCMODE value lives in <code>$100002</code>.</li>
+            </ul></li>
+          <li><b>Hooks</b>:
+            <ul>
+              <li>VBlank task at <code>$1214</code>; LSPC write at <code>$1EA4</code>.</li>
+              <li>Dial reads at <code>$2310/16/1C/22</code> and <code>$239E/A4/AA/B0</code>.</li>
+              <li>Fire button (dial bit 7 → bit 4) at <code>$2406/$2414</code> (P1) and <code>$2428/$2436</code> (P2).</li>
+              <li>CONTROLLER soft DIP <code>$10FD8C</code> tests at <code>$23F2/$2736/$2A24</code>, forced to PADDLE.</li>
+            </ul></li>
+        </ul>
+      </details>
+
+      <details class="ref">
+        <summary>Puzzle Bobble 2 (pbobbl2n)</summary>
+        <ul>
+          <li><b>No free space</b>, so the P ROM grows to 2 MB.
+            <ul>
+              <li>Code runs from CPU <code>$200000</code>, which is P offset <code>$100000</code>.</li>
+              <li>Tuning block at <code>$200004</code>: <code>+4</code> gain (×256 = steps per count), <code>+6</code> kmenu 16, <code>+8</code> invert, <code>+9</code> tick, <code>+10</code> reload, <code>+12</code> lspcbits <code>$D8</code>.</li>
+            </ul></li>
+          <li><b>RAM</b> <code>$10F000</code>: magic, frame counter <code>+4</code>, any-spinner flag <code>+6</code>, player blocks at <code>+$10</code>/<code>+$20</code> (count, menu accumulator, launcher last count/frame, tick frame).</li>
+          <li><b>Game</b> (<code>a5 = $108000</code>):
+            <ul>
+              <li>P1 held, active low, at <code>-$700C(a5)</code>; new presses at <code>-$700B</code>.</li>
+              <li>P2 at <code>-$7008</code>/<code>-$7007</code>.</li>
+              <li>Copied from BIOS <code>$10FD96</code>/<code>$10FD9C</code> at <code>$246C</code>.</li>
+            </ul></li>
+          <li><b>Launcher object <code>a4</code></b>:
+            <ul>
+              <li><code>$2</code> player, <code>$8</code> crank frame.</li>
+              <li><code>$C</code> angle as 16.16, from −60 to +60.</li>
+              <li><code>$10</code> CPU target; <code>(a4) ≠ 0</code> means the CPU or demo is aiming.</li>
+            </ul></li>
+          <li><b>The aim routine</b> is at <code>$6225A</code>; the tick sound at <code>$62556</code> queues <code>$1A42</code>.
+            <ul>
+              <li>The sound queue sends one byte per frame, hence the tick limit.</li>
+              <li><code>-$4686(a5)</code> is the game's lag flag (double lever speed).</li>
+            </ul></li>
+          <li><b>Menu handler</b> at <code>$27C2A</code>: <code>$1008(a5) = 1</code> means horizontal (game select), otherwise vertical (difficulty).</li>
+          <li><b>Hooks</b>:
+            <ul>
+              <li>SYSTEM_IO calls at <code>$236C</code> (VBlank frame task) and <code>$2406</code>.</li>
+              <li>LSPCMODE writes at <code>$23E8</code> and <code>$2440</code>.</li>
+              <li>Input copy at <code>$2480</code>/<code>$2492</code>.</li>
+              <li>Launcher at <code>$62290</code>, vertical menu at <code>$27C80</code>.</li>
+            </ul></li>
+        </ul>
+      </details>
+
+      <details class="ref">
+        <summary>Test harness</summary>
+        <ul>
+          <li><code>test/harness/neo.py</code> drives Geolith built with <code>third_party/geolith-harness.patch</code>. Set <code>GEOLITH_CORE</code> and <code>NEOGEO_SYSDIR</code>.</li>
+          <li><b><code>Spinner</code></b> generates quadrature against emulated in-frame time, with an optional 1 ms quantum like MiSTer's USB polling. <code>spin_counts(port, n, rate)</code> turns by exactly <code>n</code>.</li>
+          <li><b>Other helpers</b>: <code>watch()</code>/<code>watch_log()</code> for RAM accesses with the PC; <code>snd_log()</code> for sound commands; <code>vlog_on()</code>/<code>vlog()</code> for VRAM writes; save and load state.</li>
+          <li><b>Save states</b> belong to one ROM build. A state made with a different P ROM size crashes when loaded, so remake states after rebuilding.</li>
+          <li><b>Two methods worked well:</b> finding variables by holding a direction and diffing RAM frame by frame, and bisecting a crash by leaving patch sites out one at a time.</li>
+        </ul>
+      </details>
 
       <h2>This page</h2>
       <p>The patcher carries only the bytes the patches change, never ROM data. It recognises your file by the CRC of its program ROM, writes the changes (the program ROM is stored byte-swapped in a <code>.neo</code>, so each byte goes to its swapped position), sets the name MiSTer shows, and checks the result's CRC against the build that was tested before saving it.</p>
